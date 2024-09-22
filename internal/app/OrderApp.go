@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"github.com/SimpleMSA/internal/domain/entity"
@@ -22,7 +23,13 @@ type OrderApp struct {
 
 func getUserFromToken(token string) (entity.User, error) {
 	var user entity.User
-	resp, err := http.Get("http://localhost:8080/validate?token=" + token)
+	data := map[string]string{"token": token}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return user, err
+	}
+
+	resp, err := http.Post("http://localhost:8080/validate", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return user, err
 	}

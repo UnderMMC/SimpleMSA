@@ -36,7 +36,7 @@ func generateToken(user entity.User) (string, error) {
 	claims := &jwt.StandardClaims{
 		ExpiresAt: expirationTime.Unix(),
 		IssuedAt:  time.Now().Unix(),
-		Subject:   string(user.ID),
+		Subject:   user.Login,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(secretKey)
@@ -79,6 +79,35 @@ func (a *App) loginHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+func (a *App) validatorHandler(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Token == "" {
+		http.Error(w, "Missing token", http.StatusBadRequest)
+		return
+	}
+
+	tokenString := request.Token
+
+	claims := &jwt.StandardClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return secretKey, nil
+	})
+
+	if err != nil || !token.Valid {
+		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	user := entity.User{
+		Login: claims.Subject,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
+}
+
 func New() *App {
 	return &App{}
 }
@@ -92,7 +121,6 @@ func (a *App) Run(wg *sync.WaitGroup) {
 		log.Fatal(err)
 	}
 
-	// help pls
 	repo := repository.NewPostgresUserRepository(db)
 	serv := service.NewUserService(repo)
 	a.serv = serv
@@ -101,6 +129,7 @@ func (a *App) Run(wg *sync.WaitGroup) {
 
 	r.HandleFunc("/reg", a.registrHandler).Methods("POST")
 	r.HandleFunc("/login", a.loginHandler).Methods("POST")
+	r.HandleFunc("/validate", a.validatorHandler).Methods("POST")
 
 	log.Println("Starting server on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
